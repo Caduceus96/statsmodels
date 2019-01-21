@@ -148,6 +148,40 @@ def ftest_power(effect_size, df_num, df_denom, alpha, ncc=1):
     pow_ = stats.ncf.sf(crit, df_denom, df_num, nc)
     return pow_ #, crit, nc
 
+def prop_power(effect_size, nobs, alpha, prop1, alternative='two-sided', strict=False):
+
+    if alternative in ['two-sided', 'one-sided']:
+        if alternative == 'two-sided':
+            sides = 2.0
+        else:
+            sides = 1.0
+    else:
+        raise ValueError("alternative must be one of {two-sided, one-sided}")
+
+    prop2 = np.sin((2*np.arcsin(np.sqrt(prop1))+effect_size)/2.0)**2
+
+    unscaled_effect_size = np.abs(prop1-prop2)
+
+    avg_prop = (prop1 + prop2)/2.0
+    variance1 = prop1 * (1-prop1)
+    variance2 = prop2 * (1-prop2)
+
+    if alternative == 'two-sided' and strict:
+        quantile = stats.norm.ppf(1-(alpha/sides))
+        avg_quantile = 1-avg_prop
+
+        avg_variance = avg_prop * avg_quantile
+        return stats.norm.cdf((np.sqrt(nobs)*unscaled_effect_size-quantile*np.sqrt(2*avg_variance))
+                              /np.sqrt(variance1+variance2))\
+               (1-stats.norm.cdf((np.sqrt(nobs)*unscaled_effect_size+quantile*np.sqrt(2*avg_variance))
+                                 /np.sqrt(variance1+variance2)))
+    else:
+        return stats.norm.cdf((np.sqrt(nobs) * unscaled_effect_size - (stats.norm.ppf(1-(alpha/sides))
+                                                                      * np.sqrt((prop1+prop2) *
+                              (1-avg_prop)))) / np.sqrt(variance1 + variance2))
+
+
+
 
 #class based implementation
 #--------------------------
@@ -163,7 +197,7 @@ class Power(object):
         # used only for instance level start values
         self.start_ttp = dict(effect_size=0.01, nobs=10., alpha=0.15,
                               power=0.6, nobs1=10., ratio=1,
-                              df_num=10, df_denom=3   # for FTestPower
+                              df_num=10, df_denom=3, prop1=kwds.get('prop1', 0.01)  # for FTestPower
                               )
         # TODO: nobs1 and ratio are for ttest_ind,
         #      need start_ttp for each test/class separately,
@@ -179,6 +213,8 @@ class Power(object):
             self.start_bqexp[key] = dict(low=1e-8, start_upp=2)
         for key in ['alpha']:
             self.start_bqexp[key] = dict(low=1e-12, upp=1 - 1e-12)
+        for key in ['prop1']:
+            self.start_bqexp[key] = dict(upp=1 - 1e-8, low=kwds.get('prop1', 1))
 
     def power(self, *args, **kwds):
         raise NotImplementedError
@@ -219,7 +255,7 @@ class Power(object):
             del kwds['power']
             return self.power(**kwds)
 
-        if kwds['effect_size'] == 0:
+        if kwds.get('effect_size') == 0:
             import warnings
             from statsmodels.tools.sm_exceptions import HypothesisTestWarning
             warnings.warn('Warning: Effect size of 0 detected', HypothesisTestWarning)
@@ -1036,6 +1072,28 @@ class GofChisquarePower(Power):
                                                       n_bins=n_bins,
                                                       alpha=alpha,
                                                       power=power)
+
+class ProportionTestPower(Power):
+    '''power for proportions test'''
+
+    def power(self, effect_size, nobs1, alpha, prop1, alternative='two-sided', strict=False):
+        '''Calculate the power of a proportions test for two independent samples
+
+        Parameters
+        ----------
+        '''
+        return prop_power(effect_size, nobs1, alpha, prop1,  alternative, strict)
+
+    def solve_power(self, effect_size=None, nobs1=None, prop1=None, alpha=None, power=None,
+                    strict=None, alternative='two-sided'):
+        return super(ProportionTestPower, self).solve_power(
+            effect_size=effect_size, nobs1=nobs1,
+                                                 alpha=alpha,
+                                                 power=power,
+                                                 prop1=prop1,
+                                                 strict=strict,
+                                                 alternative=alternative)
+
 
 class _GofChisquareIndPower(Power):
     '''Statistical Power calculations for chisquare goodness-of-fit test

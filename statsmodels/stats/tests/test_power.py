@@ -83,8 +83,14 @@ class CheckPowerMixin(object):
             value = kwds[key]
             kwds[key] = None
 
+
             result = self.cls().solve_power(**kwds)
-            assert_allclose(result, value, rtol=0.001, err_msg=key+' failed')
+            if 'prop1' not in kwds:
+                assert_allclose(result, value, rtol=0.001, err_msg=key+' failed')
+            else:
+                if kwds.get('effect_size') is None: # effect size can have degenerate solutions for proportion test
+                    assert_allclose(np.sign(value)*result, value, rtol=0.001, err_msg=key+' failed')
+
             # yield can be used to investigate specific errors
             #yield assert_allclose, result, value, 0.001, 0, key+' failed'
             kwds[key] = value  # reset dict
@@ -520,6 +526,26 @@ class TestNormalIndPower_onesamp2(CheckPowerMixin):
         cls.kwds_extra = {'ratio': 0, 'alternative':'smaller'}
 
         cls.cls = smp.NormalIndPower
+
+class TestProportionPower_twosamp1(CheckPowerMixin):
+
+    @classmethod
+    def setup_class(cls):
+        res2 = Holder()
+        res2.n = 300
+        res2.prop1 = 0.70
+        res2.sig_level = 0.05
+        res2.alternative = 'two-sided'
+        res2.power = 0.6083127
+        res2.strict = False
+        res2.effect_size = (2*(np.arcsin(np.sqrt(0.78))-np.arcsin(np.sqrt(0.70))))
+
+        cls.res2 = res2
+        cls.kwds = {'nobs1': res2.n,
+                    'alpha': res2.sig_level, 'power': res2.power,
+                    'effect_size': res2.effect_size}
+        cls.kwds_extra = {'alternative': res2.alternative, 'strict': res2.strict, 'prop1': res2.prop1}
+        cls.cls = smp.ProportionTestPower
 
 
 
